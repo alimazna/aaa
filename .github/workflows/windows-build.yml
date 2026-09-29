@@ -1,0 +1,60 @@
+name: Windows Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: >
+          cmake -S . -B build
+          -G "Visual Studio 17 2022"
+          -A x64
+          -DXAUUSD_BUILD_UI=ON
+
+      - name: Build Release
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Prepare package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+
+          Copy-Item "build\Release\xauusd_ui.exe" "package\xauusd_ui.exe"
+
+          if (Test-Path "config") {
+            Copy-Item "config" "package\config" -Recurse
+          }
+
+          if (Test-Path "README.md") {
+            Copy-Item "README.md" "package\README.md"
+          }
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "package\*" `
+            -DestinationPath "XAUUSD_Sovereign_Windows.zip" `
+            -Force
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Sovereign-Windows
+          path: XAUUSD_Sovereign_Windows.zip
