@@ -12,122 +12,58 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows x64
     runs-on: windows-2022
 
-    env:
-      BUILD_DIR: build
-      PACKAGE_DIR: package
-      BUILD_TYPE: Release
-      VCPKG_ROOT: C:\vcpkg
-
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show toolchain versions
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DXAUUSD_BUILD_UI=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Verify EXE
         shell: pwsh
         run: |
-          Write-Host "=== CMake ==="
-          cmake --version
-
-          Write-Host "=== Python ==="
-          python --version
-
-          Write-Host "=== Git ==="
-          git --version
-
-          Write-Host "=== Vcpkg ==="
-          & "$env:VCPKG_ROOT\vcpkg.exe" version
-
-          Write-Host "=== Visual Studio ==="
-          Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022" -Directory |
-            Select-Object -ExpandProperty FullName
-
-      - name: Install required C++ dependency - curl
-        shell: pwsh
-        run: |
-          & "$env:VCPKG_ROOT\vcpkg.exe" install curl:x64-windows
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          cmake `
-            -S . `
-            -B "$env:BUILD_DIR" `
-            -G "Visual Studio 17 2022" `
-            -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DXAUUSD_BUILD_UI=ON
-
-      - name: Build Release
-        shell: pwsh
-        run: |
-          cmake `
-            --build "$env:BUILD_DIR" `
-            --config "$env:BUILD_TYPE" `
-            --parallel
-
-      - name: Run tests
-        shell: pwsh
-        run: |
-          ctest `
-            --test-dir "$env:BUILD_DIR" `
-            -C "$env:BUILD_TYPE" `
-            --output-on-failure
-
-      - name: Verify executable exists
-        shell: pwsh
-        run: |
-          $exe = Join-Path "$env:BUILD_DIR" "$env:BUILD_TYPE\xauusd_ui.exe"
+          $exe = "build\Release\xauusd_ui.exe"
 
           if (-not (Test-Path $exe)) {
-            Write-Error "Executable not found: $exe"
+            Write-Error "EXE not found: $exe"
             exit 1
           }
 
-          Write-Host "Executable found:"
-          Get-Item $exe | Format-List FullName, Length, LastWriteTime
+          Write-Host "EXE found:"
+          Get-Item $exe | Select-Object FullName, Length
 
-      - name: Prepare Windows package
+      - name: Create package
         shell: pwsh
         run: |
-          if (Test-Path "$env:PACKAGE_DIR") {
-            Remove-Item "$env:PACKAGE_DIR" -Recurse -Force
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+
+          Copy-Item "build\Release\xauusd_ui.exe" "package\xauusd_ui.exe"
+
+          if (Test-Path "config") {
+            Copy-Item "config" "package\config" -Recurse
           }
 
-          New-Item `
-            -ItemType Directory `
-            -Path "$env:PACKAGE_DIR" `
-            -Force | Out-Null
+          if (Test-Path "README.md") {
+            Copy-Item "README.md" "package\README.md"
+          }
 
-          # Main executable
-          Copy-Item `
-            "$env:BUILD_DIR\$env:BUILD_TYPE\xauusd_ui.exe" `
-            "$env:PACKAGE_DIR\xauusd_ui.exe" `
+          Compress-Archive `
+            -Path "package\*" `
+            -DestinationPath "XAUUSD_Sovereign_Windows_x64.zip" `
             -Force
 
-          # Project configuration
-          if (Test-Path "config") {
-            Copy-Item `
-              "config" `
-              "$env:PACKAGE_DIR\config" `
-              -Recurse `
-              -Force
-          }
-
-          # Documentation
-          if (Test-Path "README.md") {
-            Copy-Item `
-              "README.md" `
-              "$env:PACKAGE_DIR\README.md" `
-              -Force
-          }
-
-          # Copy vcpkg runtime DLLs required by libcurl
-          $vcpkgBin = "$env:VCPKG_ROOT\installed\x64-windows\bin"
-
-          if (Test-Path $vcpkgBin) {
-            Ge
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAUUSD-Sovereign-Windows-x64
+          path: XAUUSD_Sovereign_Windows_x64.zip
+          if-no-files-found: error
 ```
